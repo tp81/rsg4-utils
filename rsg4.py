@@ -10,50 +10,74 @@ import tifffile
 from itertools import cycle
 from numba import jit
 
-def findshift(a,b,smooth_sigma=0.5):
+import cupyx
+import cupyx.scipy.ndimage
+import cupy
+
+def findshift(a,b,smooth_sigma=0.5,use_gpu=True):
     '''Find traslation of b wrt. a using FFT.
     
     a and b are considered to be square matrices.
     
     '''
     
+    if use_gpu:
+        gaussian = cupyx.scipy.ndimage.gaussian_filter
+        fft2 = cupy.fft.fft2
+        ifft2 = cupy.fft.ifft2
+        conj = cupy.conj
+        fftshift = cupy.fft.fftshift
+        argmax = cupy.argmax
+        abs_ = cupy.abs
+
+        a = cupy.array(a)
+        b = cupy.array(b)
+    else:
+        gaussian = skimage.filters.gaussian
+        fft2 = np.fft.fft2
+        ifft2 = np.fft.ifft2
+        conj = np.conj
+        fftshift = np.fft.fftshift
+        argmax = np.argmax
+        abs_ = np.abs
+
     # Smooth input images
-    a = skimage.filters.gaussian(a,smooth_sigma)
-    b = skimage.filters.gaussian(b,smooth_sigma)
+    a = gaussian(a,smooth_sigma)
+    b = gaussian(b,smooth_sigma)
     
     # Calculate 2D Fast Fourier Transform
-    af = np.fft.fft2(a)
-    bf = np.fft.fft2(b)
+    af = fft2(a)
+    bf = fft2(b)
     
     # Calculate cross-correlation between a and b
-    abf = af*np.conj(bf)
-    iabf = np.fft.fftshift(abs(np.fft.ifft2(abf)))
+    abf = af*conj(bf)
+    iabf = fftshift(abs_(ifft2(abf)))
     
     # Find maxima of cross-correlation
-    dn = np.argmax(iabf)
+    dn = argmax(iabf)
     di,dj = np.unravel_index(dn,abf.shape)
     ddi = iabf.shape[0]/2-di
     ddj = iabf.shape[1]/2-dj
     
     return ddi,ddj
 
-def find_stripe_shift(stripe1,stripe2,overlap=0.1):
+def find_stripe_shift(stripe1,stripe2,overlap=0.1,use_gpu=True):
     '''Find traslation of stripe2 with respect to stripe1.'''
     
     margin_size = int(np.round(stripe1.shape[1]*overlap))
     margin1 = stripe1[:,-margin_size:]
     margin2 = stripe2[:,:margin_size]
     
-    di, dj = findshift(margin1,margin2)
+    di, dj = findshift(margin1,margin2,use_gpu)
     
     return -di, stripe1.shape[1] - margin_size - dj
 
-def find_stripe_shifts(stripes, overlap=0.1):
+def find_stripe_shifts(stripes, overlap=0.1,use_gpu=True):
     dijs = [(0,0)]
     dij = (0,0)
     
     for s1, s2 in zip(stripes[:-1],stripes[1:]):
-        di, dj = find_stripe_shift(s1,s2,overlap)
+        di, dj = find_stripe_shift(s1,s2,overlap,use_gpu)
         
         dij = ( dij[0]+di, dij[1]+dj )
         
@@ -89,9 +113,9 @@ def napari_mosaic_line(stripes,dijs):
         sl.blending = 'additive'
         sl.colormap = cm
 
-def make_mosaic(stripes, dijs=None, overlap=0.1):
+def make_mosaic(stripes, dijs=None, overlap=0.1, use_gpu=True):
     if dijs is None:
-        dijs = find_stripe_shifts(stripes, overlap)
+        dijs = find_stripe_shifts(stripes, overlap, use_gpu)
     
     sh = stripes[0].shape
 
@@ -123,7 +147,7 @@ def make_mosaic(stripes, dijs=None, overlap=0.1):
     
     return newshape
 
-def Reconstruct(indir, overlap=0.1, do_bkgsub=True):
+def Reconstruct(indir, overlap=0.1, do_bkgsub=True, use_gpu=True):
     tiffs = glob(os.path.join(indir,'*.tif'))
     
     stripes = [tifffile.imread(im) for im in sorted(tiffs)]
