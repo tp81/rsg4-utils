@@ -32,16 +32,15 @@ for layer_dir in layer_directories:
     for tiff_file in tiff_files:
         x_position = int(tiff_file.split("col")[1].split(".")[0]); print(x_position)
         image_path = os.path.join(images_path, tiff_file); print(image_path)
-        img = tifffile.imread(image_path)
 
         if x_position not in x_position_images:
             x_position_images[x_position] = []
-        x_position_images[x_position].append(img)
+        x_position_images[x_position].append(image_path)
 
 # Combine images for each x position with overlap
 final_images = []
 for x_position, images in x_position_images.items():
-    combined_image = np.stack(images)
+    combined_image = np.stack([tifffile.imread(im) for im in images])
     #final_images.append(combined_image)
     tifffile.imwrite(os.path.join(output_directory,f"ch{channel}_col{x_position:05d}.tif"),combined_image)
 
