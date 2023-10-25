@@ -1,14 +1,13 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import skimage
 import skimage.filters
+from skimage.transform import warp, SimilarityTransform
 from skimage import data
 import os
 from glob import glob
 import tifffile
 from itertools import cycle
-from numba import jit
 
 import cupyx
 import cupyx.scipy.ndimage
@@ -94,6 +93,8 @@ def bkg_sub(stripes, debug=False):
     bkg_yhat = np.polyval(bkg_coeff,bkg_x)
     
     if debug:
+        import matplotlib.pyplot as plt
+
         plt.plot(bkg_x,bkg_y,'b.')
         plt.plot(bkg_x,bkg_yhat,'r-')
     
@@ -147,9 +148,10 @@ def make_mosaic(stripes, dijs=None, overlap=0.1, use_gpu=True):
     
     return newshape
 
-def Reconstruct(indir, overlap=0.1, do_bkgsub=True, use_gpu=True):
+def ReconstructLayer(indir, overlap=0.1, do_bkgsub=True, use_gpu=True):
     tiffs = glob(os.path.join(indir,'*.tif'))
     
+    # Load all stripes in memory
     stripes = [tifffile.imread(im) for im in sorted(tiffs)]
     
     if do_bkgsub:
@@ -160,4 +162,54 @@ def Reconstruct(indir, overlap=0.1, do_bkgsub=True, use_gpu=True):
     m1 = make_mosaic(stripes, dijs)
     
     return m1
+
+def align_stack(images):
+    n = len(images)
+
+    aligned_images = [images[0]]
+    reference_image = images[0]
+
+    for i in range(1,n):
+        cross_corr = findshift(reference_image, images[i])
+        y, x = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
+        shift_y, shift_x = np.array(cross_corr.shape) / 2 - np.array([y, x])
+        translation_matrix = np.array([[1, 0, shift_x], [0, 1, shift_y]], dtype=np.float32)
+        aligned_image = images[i].get()
+        aligned_image = warp(aligned_image, SimilarityTransform(translation_matrix))
+        aligned_images.append(aligned_image)
+    
+    # Stack the aligned images
+    aligned_stack = np.stack(aligned_images, axis=0)
+
+    return aligned_stack
+
+def ReconstructStack(indir, outdir, overlap=0.1, do_bkgsub=True, use_gpu=True):
+    # Get all the layers
+    layersDirs = [p for p in glob(os.path.join(indir,'layer*')) if os.path.isdir(p) ]
+
+    aligned_stack_images={}
+
+    # In each layer, process each channel
+    for ldir in layersDirs:
+        for chdir in [ p for p in glob(os.path.join(ldir, '*')) if os.path.isdir(p) ]:
+            chname = os.path.split(chdir)[-1]
+            if not chname in aligned_stack.keys():
+                aligned_stack_images[chname] = []
+
+            # Stitch all layers
+            ch = ReconstructLayer(os.path.join(chdir,'images'), 
+                                 overlap=overlap, do_bkgsub=do_bkgsub, use_gpu=use_gpu)
+            
+            # Save output
+            aligned_stack_images[chname].append(ch)
+
+    aligned_stack={}
+    for chname in aligned_stack_images.keys():
+        aligned_stack[chname] = np.stack(aligned_stack_images[chname])
+
+        outname = f'stack_{chname}.tif'
+
+        outpath = os.path.join(outdir, outname)
+
+        tifffile.imwrite(outpath, aligned_stack[chname])
 

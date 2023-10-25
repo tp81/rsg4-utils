@@ -1,5 +1,5 @@
 import tifffile
-from rsg4 import Reconstruct
+from rsg4 import ReconstructLayer
 import logging
 
 infile_zipped = 'https://s3.msi.umn.edu/tpengo-public/layer000.zip'
@@ -25,16 +25,16 @@ indir = './layer000/561/images'
 outpath =  './layer000.tif'
 
 logging.info("Reconstructing no GPU...")
-m1 = Reconstruct(indir)
+m1 = ReconstructLayer(indir)
 
 logging.info("Reconstructing with GPU...")
-m1 = Reconstruct(indir)
+m1 = ReconstructLayer(indir)
 
 logging.info(f"Saving to {outpath}")
 tifffile.imwrite(outpath, m1)
 
 logging.info("Reconstructing without BkgSub...")
-m1 = Reconstruct(indir, do_bkgsub=False)
+m1 = ReconstructLayer(indir, do_bkgsub=False)
 
 outpath2 = outpath.replace('.tif','_nobkgSub.tif')
 logging.info(f"Saving to {outpath2}")
