@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import tifffile
+import argparse
 
 # Create an argument parser
 parser = argparse.ArgumentParser(description="Stack and combine microscope images from the RSG4.")
@@ -9,7 +10,6 @@ parser = argparse.ArgumentParser(description="Stack and combine microscope image
 parser.add_argument("--input_directory", type=str, required=True, help="Path to the input directory")
 parser.add_argument("--output_directory", type=str, required=True, help="Path to the output directory")
 parser.add_argument("--channel", type=str, required=True, help="Channel number to process (e.g., 405)")
-parser.add_argument("--overlap_percentage", type=int, default=10, help="Overlap percentage (default: 10)")
 
 # Parse the command-line arguments
 args = parser.parse_args()
@@ -18,9 +18,8 @@ args = parser.parse_args()
 input_directory = args.input_directory
 output_directory = args.output_directory
 
-# Set the channel, and overlap percentage from the command-line arguments
+# Set the channel from the command-line arguments
 channel = args.channel
-overlap_percentage = args.overlap_percentage
 
 # Get a list of all "layer" directories
 layer_directories = [d for d in os.listdir(input_directory) if d.startswith("layer") and os.path.isdir(os.path.join(input_directory,d))]
@@ -38,8 +37,8 @@ for layer_dir in layer_directories:
     tiff_files.sort(key=lambda x: int(x.split("col")[1].split(".")[0]))
 
     for tiff_file in tiff_files:
-        x_position = int(tiff_file.split("col")[1].split(".")[0]); print(x_position)
-        image_path = os.path.join(images_path, tiff_file); print(image_path)
+        x_position = int(tiff_file.split("col")[1].split(".")[0]);
+        image_path = os.path.join(images_path, tiff_file)
 
         if x_position not in x_position_images:
             x_position_images[x_position] = []
@@ -48,15 +47,26 @@ for layer_dir in layer_directories:
 # Combine images for each x position with overlap
 final_images = []
 for x_position, images in x_position_images.items():
-    combined_image = np.stack([tifffile.imread(image_path) for image_path in images])
-    #final_images.append(combined_image)
-    tifffile.imwrite(os.path.join(output_directory,f"ch{channel}_col{x_position:05d}.tif"),combined_image)
+    print(images)
 
-# Combine all x position images into a single image with overlap
-#final_image = np.concatenate(final_images,axis=2)
+    memmaps = [tifffile.memmap(image_path) for image_path in images]
 
-# Save the final image as a TIFF file
-#output_file = os.path.join(output_directory, f"combined_channel_{channel}.tiff")
-#tifffile.imwrite(output_file,final_image)
+    outname = os.path.join(output_directory,f"ch{channel}_col{x_position:05d}.tif")
 
-#print(f"Combining complete. The result is saved to {output_file}")
+    memmap_out = tifffile.memmap(
+        outname,
+        shape = (len(memmaps),memmaps[0].shape[0],memmaps[0].shape[1]),
+        dtype = memmaps[0].dtype
+    )
+
+    for z in range(len(memmaps)):
+        memmap_out[z,...] = memmaps[z]
+
+    memmap_out.flush()
+    del memmap_out
+
+    for mm in memmaps:
+        del mm
+
+
+print(f"Combining complete. The results are saved to {output_directory}")
