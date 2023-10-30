@@ -70,3 +70,4 @@ for x_position, images in x_position_images.items():
 
 
 print(f"Combining complete. The results are saved to {output_directory}")
+
