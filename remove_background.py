@@ -29,7 +29,7 @@ def processPref(pref,op):
 		tifffile.imwrite(p.replace(pref,op), s)      
     
 if len(argv)<2:
-	error("Usage: remove_background <path_to_layer_directory>")
+	error("Usage: remove_background <path_to_layer_directory_input>,<path_to_layer_directory_output>")
 
 inpref,outpref = argv[1].split(",")
 
