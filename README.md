@@ -19,7 +19,7 @@ Run in parallel
 
 ```
 module load parallel
-<pref.txt parallel bar jobs 32 python remove_background.py
+<pref.txt parallel --bar --jobs 32 python remove_background.py
 ```
 
 
